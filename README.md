@@ -11,6 +11,8 @@ Also contained are the following command-line tools:
 * `caduhead` - Output the first part of a CADU stream from stdin, in whole CADUs, up to a given index.
 * `cadutail` - Output the last part of a CADU stream from stdin, in whole CADUs, from a given index.
 
+The available command line options are available from each program with the `-h` flag.
+
 ## Building
 
 Dependencies:
