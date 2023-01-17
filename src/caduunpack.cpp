@@ -1,4 +1,4 @@
-// Given a stream of CADUs on stdin, extracts and outputs the stream of CCSDS packets on stdout
+// Given a stream of CADUs on stdin, extracts and outputs the stream of CCSDS SPP packets on stdout
 
 #include <cmath>
 #include <iostream>
@@ -29,7 +29,7 @@ int main(int argc, char *argv[]) {
   options.add_options()
     (
       "m,mode",
-      "Choose between raw byte stream and CCSDS packet mode. raw unpacks all bytes from all the input CADUs.  ccsds discards prefixing bytes from a previous packet - raw|ccsds",
+      "Choose between raw byte stream and CCSDS SPP packet mode. raw unpacks all bytes from all the input CADUs.  spp discards prefixing bytes from a previous packet - raw|spp",
       cxxopts::value<std::string>()->default_value("raw")
     )
     ("h,help", "Print usage")
@@ -47,8 +47,8 @@ int main(int argc, char *argv[]) {
   bool valid = true;
 
   auto mode = result["mode"].as<std::string>();
-  if (mode != "raw" && mode != "ccsds") {
-    std::cerr << "Error: mode must be either \"raw\", or \"ccsds\"" << '\n';
+  if (mode != "raw" && mode != "spp") {
+    std::cerr << "Error: mode must be either \"raw\", or \"spp\"" << '\n';
     valid = false;
   }
 
@@ -66,7 +66,7 @@ int main(int argc, char *argv[]) {
         std::cout << static_cast<const uint8_t>(it);
       }
     }
-  } else if (mode == "ccsds") {
+  } else if (mode == "spp") {
 
     bool first_cadu = true;
     int discarded_bytes = 0;

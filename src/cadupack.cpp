@@ -7,7 +7,7 @@
 #include "libcadu/cadu_constants.h"
 #include "libspp/libspp.h"
 
-// TODO: work out why decoding a --mode ccsds with RT-STPS causes issues every 442 packets
+// TODO: work out why decoding a --mode spp with RT-STPS causes issues every 442 packets
 
 std::ostream& operator<< (std::ostream& os, std::byte b) {
   return os << std::bitset<8>(std::to_integer<int>(b));
@@ -18,7 +18,7 @@ int main(int argc, char *argv[]) {
   options.add_options()
     (
       "m,mode",
-      "Choose between raw byte stream and CCSDS packet mode. raw packs all bytes into a contiguous sequence of CADUs. ccsds packs bytes one packet at a time, sets first-header-pointer in each CADU accordingly, and generates fill packets to complete partial CADUs. ccsdspad packs bytes one packet at a time, with one packet per CADU, padded with fill packets - raw|ccsds|ccsdspad",
+      "Choose between raw byte stream and CCSDS SPP packet mode. raw packs all bytes into a contiguous sequence of CADUs. spp packs bytes one packet at a time, sets first-header-pointer in each CADU accordingly, and generates fill packets to complete partial CADUs. spppad packs bytes one packet at a time, with one packet per CADU, padded with fill packets - raw|spp|spppad",
       cxxopts::value<std::string>()->default_value("raw")
     )
     (
@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
     )
     (
       "p,first-header-pointer",
-      "Sets the pointer to the first CCSDS header within the data. In raw mode, this sets the pointer for all CADUs. In ccsds mode, this sets the pointer for the first CADU only - <int (0-"
+      "Sets the pointer to the first CCSDS SPP header within the data. In raw mode, this sets the pointer for all CADUs. In spp mode, this sets the pointer for the first CADU only - <int (0-"
         + std::to_string((int)std::pow(2, cadu::FIRST_HEADER_POINTER_LEN)-1)
         + ")>",
       cxxopts::value<int>()->default_value("0")
@@ -92,8 +92,8 @@ int main(int argc, char *argv[]) {
   bool valid = true;
 
   auto mode = result["mode"].as<std::string>();
-  if (mode != "raw" && mode != "ccsds" && mode != "ccsdspad") {
-    std::cerr << "Error: mode must be either \"raw\", \"ccsds\", or \"ccsdspad\"" << '\n';
+  if (mode != "raw" && mode != "spp" && mode != "spppad") {
+    std::cerr << "Error: mode must be either \"raw\", \"spp\", or \"spppad\"" << '\n';
     valid = false;
   }
 
@@ -205,8 +205,8 @@ int main(int argc, char *argv[]) {
 
       ++vcdu_counter; // TODO: roll over correctly
     }
-  } else if (mode == "ccsds") {
-    CCSDSPacket packet;
+  } else if (mode == "spp") {
+    SPPPacket packet;
     int next_byte_offset = result["first-header-pointer"].as<int>();
 
     cadu.first_header_pointer() = next_byte_offset;
@@ -273,21 +273,21 @@ int main(int argc, char *argv[]) {
       // TODO: work out whether this packet needs to be within the bounds of the spacecraft's min and max
 
       // Construct a packet will all the magic values that mark it as a fill packet
-      // I believe this is an ICD_Space_Ground_Aqua document thing, rather than a CCSDS thing
-      CCSDSPacket fill_packet;
+      // I believe this is an ICD_Space_Ground_Aqua document thing, rather than a CCSDS SPP thing
+      SPPPacket fill_packet;
       fill_packet.version_number() = 0;
       fill_packet.type() = 0;
       fill_packet.sec_hdr_flag() = 0;
-      fill_packet.app_id() = (1 << ccsds::APP_ID_LEN) - 1;
-      fill_packet.seq_flags() = (1 << ccsds::SEQ_FLAGS_LEN) - 1;
+      fill_packet.app_id() = (1 << spp::APP_ID_LEN) - 1;
+      fill_packet.seq_flags() = (1 << spp::SEQ_FLAGS_LEN) - 1;
       fill_packet.seq_cnt_or_name() = 0;
 
       std::cerr << "working on final cadu\n";
-      if (cadu::DATA_LEN - next_byte_offset >= ccsds::MIN_PACKET_LEN) {
+      if (cadu::DATA_LEN - next_byte_offset >= spp::MIN_PACKET_LEN) {
         std::cerr << "fill packet fits\n";
         // There's sufficient space in the CADU for a fill packet
         // Construct it and copy into the packet
-        std::vector<std::byte> packet_buffer(cadu::DATA_LEN - next_byte_offset - sizeof(CCSDSPrimaryHeader), std::byte(0x00));
+        std::vector<std::byte> packet_buffer(cadu::DATA_LEN - next_byte_offset - sizeof(SPPPrimaryHeader), std::byte(0x00));
         fill_packet.data() = packet_buffer;
         //buffer.begin() + next_byte_offset << 
         std::copy(fill_packet.begin(), fill_packet.end(), buffer.begin() + next_byte_offset);
@@ -295,7 +295,7 @@ int main(int argc, char *argv[]) {
       } else {
         // There's insufficient space in the CADU to store a fill packet
         // Construct an extra-long one and copy the first part into the packet
-        std::vector<std::byte> packet_buffer(cadu::DATA_LEN*2 - next_byte_offset - sizeof(CCSDSPrimaryHeader), std::byte(0x00));
+        std::vector<std::byte> packet_buffer(cadu::DATA_LEN*2 - next_byte_offset - sizeof(SPPPrimaryHeader), std::byte(0x00));
         fill_packet.data() = packet_buffer;
         std::copy(
           fill_packet.begin(),
@@ -319,8 +319,8 @@ int main(int argc, char *argv[]) {
       cadu.data() = buffer;
       std::cout << cadu;
     }
-  } else if (mode == "ccsdspad") {
-    CCSDSPacket packet;
+  } else if (mode == "spppad") {
+    SPPPacket packet;
     int next_byte_offset = result["first-header-pointer"].as<int>();
 
     cadu.first_header_pointer() = next_byte_offset;
@@ -328,7 +328,7 @@ int main(int argc, char *argv[]) {
     while (std::cin >> packet) {
       // Check that there's enough length in the CADU to fit the packet and a fill packet if required
       if (cadu::DATA_LEN - next_byte_offset != packet.size()
-         && cadu::DATA_LEN - next_byte_offset < packet.size() + ccsds::MIN_PACKET_LEN) {
+         && cadu::DATA_LEN - next_byte_offset < packet.size() + spp::MIN_PACKET_LEN) {
         std::cerr << "Packet size too large to be padded into a frame. Skipping...\n";
       } else {
         std::copy(
@@ -338,14 +338,14 @@ int main(int argc, char *argv[]) {
 
         // Construct the fill packet if required
         if (cadu::DATA_LEN - next_byte_offset != packet.size()) {
-          CCSDSPacket fill_packet;
+          SPPPacket fill_packet;
           fill_packet.version_number() = 0;
           fill_packet.type() = 0;
           fill_packet.sec_hdr_flag() = 0;
-          fill_packet.app_id() = (1 << ccsds::APP_ID_LEN) - 1;
-          fill_packet.seq_flags() = (1 << ccsds::SEQ_FLAGS_LEN) - 1;
+          fill_packet.app_id() = (1 << spp::APP_ID_LEN) - 1;
+          fill_packet.seq_flags() = (1 << spp::SEQ_FLAGS_LEN) - 1;
           fill_packet.seq_cnt_or_name() = 0;
-          std::vector<std::byte> packet_buffer(cadu::DATA_LEN - next_byte_offset - packet.size() - sizeof(CCSDSPrimaryHeader), std::byte(0x00));
+          std::vector<std::byte> packet_buffer(cadu::DATA_LEN - next_byte_offset - packet.size() - sizeof(SPPPrimaryHeader), std::byte(0x00));
           fill_packet.data() = packet_buffer;
 
           std::copy(
